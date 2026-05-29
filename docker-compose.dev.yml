@@ -1,0 +1,30 @@
+services:
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    environment:
+      - NODE_ENV=development
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app/app
+      - ./backend/local_task:/app/local_task
+      - ./backend/config.toml:/app/config.toml:ro
+      - ./backend/.env:/app/.env:ro
+      - ./backend/data:/app/data
+      - ~/.ssh:/root/.ssh:ro
+    env_file:
+      - ./backend/.env

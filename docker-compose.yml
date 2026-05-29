@@ -1,0 +1,19 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    user: "${UID}:${GID}"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/config.toml:/app/config.toml:ro
+      - ./backend/.env:/app/.env:ro
+      - ./backend/data:/app/data
+    env_file:
+      - ./backend/.env
