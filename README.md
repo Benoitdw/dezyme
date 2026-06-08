@@ -43,7 +43,7 @@ cp backend/.env.example backend/.env   # if the file doesn't exist, create an em
 | Variable       | Default                    | Description                                          |
 |----------------|----------------------------|------------------------------------------------------|
 | `ROOT_PATH`    | `""`                       | FastAPI root path — set to `/dezyme` behind Apache   |
-| `SSH_KEY_PATH` | `/root/.ssh/id_dezyme`     | Path to the SSH private key inside the container     |
+| `SSH_KEY_PATH` | `/tmp/.ssh/id_dezyme`      | Path to the SSH private key inside the container     |
 
 ---
 
@@ -108,7 +108,7 @@ ssh -i ~/.ssh/id_dezyme user@remote-machine-1 "echo OK"
 This is an umbrella repo — `frontend/` and `backend/` are git submodules. Clone with:
 
 ```bash
-git clone --recurse-submodules <repo-url> ~/dezyme
+git clone --recurse-submodules git@github.com:Benoitdw/dezyme.git ~/dezyme
 cd ~/dezyme
 ```
 
@@ -153,10 +153,10 @@ Open `backend/.env` and set:
 
 ```env
 ROOT_PATH=/dezyme
-SSH_KEY_PATH=/root/.ssh/id_dezyme
+SSH_KEY_PATH=/tmp/.ssh/id_dezyme
 ```
 
-`ROOT_PATH` tells FastAPI that the app is served behind a `/dezyme` prefix. `SSH_KEY_PATH` is the path to the SSH private key **inside the container** — it corresponds to `~/.ssh/id_dezyme` on the host, which is mounted automatically by Docker Compose.
+`ROOT_PATH` tells FastAPI that the app is served behind a `/dezyme` prefix. `SSH_KEY_PATH` is the path to the SSH private key **inside the container** — Docker Compose mounts `~/.ssh` as read-only at `/run/ssh`, and the container entrypoint copies it to `/tmp/.ssh` with the correct permissions at startup.
 
 ### 7. Configure Apache
 
@@ -354,7 +354,8 @@ dezyme/                      ← umbrella repo (this repo)
 │   ├── config.toml.example
 │   ├── .env                 # environment variables (gitignored)
 │   ├── Dockerfile           # production image
-│   └── Dockerfile.dev       # dev image (uvicorn --reload)
+│   ├── Dockerfile.dev       # dev image (uvicorn --reload)
+│   └── entrypoint.sh        # copies SSH keys, sets HOME=/tmp
 ├── frontend/                ← submodule (dezyme_frontend)
 │   ├── src/                 # SvelteKit source
 │   ├── static/

@@ -15,5 +15,8 @@ services:
       - ./backend/config.toml:/app/config.toml:ro
       - ./backend/.env:/app/.env:ro
       - ./backend/data:/app/data
+      - ./backend/app:/app/app
+      - ./backend/local_task:/app/local_task
+      - ~/.ssh:/run/ssh:ro
     env_file:
       - ./backend/.env
