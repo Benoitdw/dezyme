@@ -181,21 +181,31 @@ sudo systemctl reload apache2
 
 ### 8. Start the stack
 
+`UID` and `GID` are bash built-ins but are **not** exported to child processes by default — Docker Compose needs them to build the backend image with the right user. Add the export to your shell profile so it persists:
+
+```bash
+echo 'export UID GID' >> ~/.bashrc   # or ~/.profile / ~/.zshrc
+source ~/.bashrc
+```
+
+Then start the stack:
+
 ```bash
 cd ~/dezyme
-docker compose up --build -d
+mkdir -p backend/data
+docker-compose up --build -d
 ```
 
 Check that both containers are running:
 
 ```bash
-docker compose ps
+docker-compose ps
 ```
 
 Check the logs if something looks wrong:
 
 ```bash
-docker compose logs -f
+docker-compose logs -f
 ```
 
 The application should now be available at `http://babylone.3bio.ulb.ac.be/dezyme`.
