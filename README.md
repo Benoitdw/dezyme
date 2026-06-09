@@ -168,8 +168,8 @@ Create a new virtual host config or add to an existing one:
 ProxyPreserveHost On
 
 # Frontend (SvelteKit / Nginx)
-ProxyPass        /dezyme http://localhost:8080/dezyme
-ProxyPassReverse /dezyme http://localhost:8080/dezyme
+ProxyPass        /dezyme http://localhost:8080
+ProxyPassReverse /dezyme http://localhost:8080
 ```
 
 Enable and reload:
