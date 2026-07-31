@@ -3,6 +3,8 @@ services:
     image: node:20-alpine
     working_dir: /app
     command: sh -c "npm install && npm run dev -- --host"
+    security_opt:
+      - label:disable
     ports:
       - "5173:5173"
     volumes:
@@ -17,6 +19,8 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
+    security_opt:
+      - label:disable
     ports:
       - "8000:8000"
     volumes:
@@ -25,6 +29,6 @@ services:
       - ./backend/config.toml:/app/config.toml:ro
       - ./backend/.env:/app/.env:ro
       - ./backend/data:/app/data
-      - ~/.ssh:/root/.ssh:ro
+      - ~/.ssh:/run/ssh:ro
     env_file:
       - ./backend/.env
