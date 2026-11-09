@@ -7,7 +7,7 @@
 # torch is installed from PyPI with its CUDA libraries: the tool uses the GPU
 # when the container is given one and falls back to the CPU otherwise.
 # SaProt weights (~3 GB) are not in the image: they are downloaded on first
-# start into the volume mounted at /models.
+# start into /models, bind-mounted from ./models/popmusic.
 
 FROM python:3.10-slim
 
@@ -37,7 +37,7 @@ COPY --from=app . .
 RUN pip install --no-cache-dir --no-deps . && rm -rf /src
 
 # 3. Compile MuSiC and fetch Foldseek into the package, then point the SaProt
-#    weights directory to /models so it can live in a volume.
+#    weights directory to /models so it can live outside the image.
 RUN python - <<'EOF'
 from popmusicevol.predictors import PoPMuSiCPredictor, SaProtPredictor
 PoPMuSiCPredictor.verify_executable()

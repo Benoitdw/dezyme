@@ -40,12 +40,9 @@ services:
     user: "${UID}:${GID}"
     volumes:
       - ./data:/data:z
-      - popmusic-models:/models
+      - ./models/popmusic:/models:z  # SaProt weights (~5 GB), downloaded on first start
     environment:
       MAX_PARALLEL: "1"
     restart: unless-stopped
     # Runs on the CPU here. On a machine with an NVIDIA GPU, add
     # docker-compose.gpu.yml (see README): same image, PoPMuSiC uses the GPU.
-
-volumes:
-  popmusic-models:

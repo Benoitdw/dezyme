@@ -215,8 +215,8 @@ cd ~/dezyme
 ```
 
 The first build takes a while (PyTorch with CUDA, several GB). The first start of
-`popmusic` then downloads the SaProt weights (~3 GB) into the `popmusic-models`
-volume; analyses submitted meanwhile stay queued and start once it is up. Both
+`popmusic` then downloads the SaProt weights (~5 GB) into `models/popmusic/`
+(gitignored, next to `data/`); analyses submitted meanwhile stay queued and start once it is up. Both
 happen once per machine.
 
 Check that the containers are running:
@@ -412,6 +412,7 @@ dezyme/                      ← umbrella repo (this repo)
 ├── wrapper/
 │   └── api.py               # generic FastAPI wrapper, shared by all softwares
 ├── data/jobs/               # job folders (gitignored, shared volume)
+├── models/popmusic/         # SaProt weights (gitignored, downloaded on first start)
 ├── docker-compose.yml       # production stack
 └── docker-compose.dev.yml   # dev stack with hot-reload
 ```

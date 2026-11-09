@@ -6,3 +6,6 @@ analytics_users.png
 # Shared job folders (docker volume ./data:/data)
 data/*
 !data/.gitkeep
+
+# Downloaded model weights (./models/<software>:/models)
+models/
