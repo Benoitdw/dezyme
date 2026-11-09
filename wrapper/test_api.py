@@ -20,7 +20,7 @@ def _wait(client, job_id, timeout=5):
     deadline = time.time() + timeout
     while time.time() < deadline:
         state = client.get(f"/status/{job_id}").json()["state"]
-        if state not in ("queued", "running"):
+        if state != "running":
             return state
         time.sleep(0.05)
     raise AssertionError("job did not finish")

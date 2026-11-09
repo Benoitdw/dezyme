@@ -28,9 +28,13 @@ One section per integrated software, with the URL of its service in `docker-comp
 ```toml
 [popmusic]
 url = "http://popmusic:8000"
+max_parallel = 1
 ```
 
 A software without a section is refused at submit time ("not available yet").
+`max_parallel` (default 1) is the number of analyses of that software run at
+the same time; the others wait in the backend's queue, oldest first, and the
+results page shows their position.
 
 ### 2. `backend/.env`
 
@@ -216,7 +220,7 @@ cd ~/dezyme
 
 The first build takes a while (PyTorch with CUDA, several GB). The first start of
 `popmusic` then downloads the SaProt weights (~5 GB) into `models/popmusic/`
-(gitignored, next to `data/`); analyses submitted meanwhile stay queued and start once it is up. Both
+(gitignored, next to `data/`); analyses submitted meanwhile wait in the queue and start once it is up. Both
 happen once per machine.
 
 Check that the containers are running:
@@ -366,9 +370,10 @@ Each software runs in its own container next to the backend, behind the same
 generic wrapper (`wrapper/api.py`). For each analysis the backend:
 
 1. writes the inputs to `data/jobs/<id>/input/` (shared volume, same path `/data` in every container);
-2. calls `POST http://<software>:8000/run/<id>` with the command-line arguments;
-3. polls `GET /status/<id>` every 15 s until `done` or `failed`;
-4. serves the results straight from `data/jobs/<id>/output/`.
+2. keeps it `waiting` in its database until fewer than `max_parallel` analyses of that software run (oldest first);
+3. calls `POST http://<software>:8000/run/<id>` with the command-line arguments;
+4. polls `GET /status/<id>` every 5 s until `done` or `failed`;
+5. serves the results straight from `data/jobs/<id>/output/`.
 
 The software containers publish no port: only the backend can reach them.
 

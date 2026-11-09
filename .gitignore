@@ -9,3 +9,5 @@ data/*
 
 # Downloaded model weights (./models/<software>:/models)
 models/
+
+__pycache__/

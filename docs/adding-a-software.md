@@ -126,20 +126,21 @@ that repo (see the README, *GitHub deploy keys*).
 ## 3. The wrapper
 
 You don't write any HTTP code: [wrapper/api.py](../wrapper/api.py) is shared by
-every software and configured through environment variables.
+every software and configured through environment variables. It has no queue: it starts a job as
+soon as it receives it. The queue is in the backend, which never sends more than
+`max_parallel` jobs at once ([6.1](#61-configtoml)).
 
 | Variable | Default | Role |
 |----------|---------|------|
 | `RUN_CMD` | — (required) | Command prefix, split like a shell would (`shlex`). The args sent by the backend are appended. |
 | `JOBS_DIR` | `/data/jobs` | Root of the job folders. |
-| `MAX_PARALLEL` | `1` | Jobs run at the same time; the rest wait in the wrapper's queue. |
 
 Its API:
 
 | Endpoint | Returns |
 |----------|---------|
-| `POST /run/{job_id}` with `{"args": [...]}` | `202` job queued · `404` job folder missing · `409` already submitted · `422` invalid id or arg |
-| `GET /status/{job_id}` | `200` with `{"state": ..., "argv", "queued_at", "started_at", "finished_at", "returncode"}` · `404` unknown job |
+| `POST /run/{job_id}` with `{"args": [...]}` | `202` job started · `404` job folder missing · `409` already submitted · `422` invalid id or arg |
+| `GET /status/{job_id}` | `200` with `{"state": ..., "argv", "started_at", "finished_at", "returncode"}` · `404` unknown job |
 | `GET /health` | `{"ok": true}` |
 
 How it runs a job:
@@ -153,11 +154,9 @@ sequenceDiagram
     participant P as Tool process
 
     B->>W: POST /run/<id> {args}
-    W->>FS: status.json = queued (argv, queued_at)
+    W->>FS: status.json = running (argv, started_at)
     W->>T: start thread
-    W-->>B: 202 queued
-    T->>T: wait for a free slot (MAX_PARALLEL)
-    T->>FS: status.json = running (started_at)
+    W-->>B: 202
     T->>P: subprocess.run(RUN_CMD + args, cwd=<job dir>)
     P->>FS: output/* and stdout+stderr → job.log
     P-->>T: exit code
@@ -171,7 +170,7 @@ Things worth knowing:
 
 - **The state lives on disk**, in `status.json`, written atomically. A finished
   job is still known after the container restarts.
-- **`lost`**: if `status.json` says `queued` or `running` but the current wrapper
+- **`lost`**: if `status.json` says `running` but the current wrapper
   process doesn't know the job, the container was restarted while it ran. The
   backend then marks the analysis `failed` / `job_dead`. Rebuilding a software
   container during a deploy kills the running analyses this way.
@@ -224,10 +223,11 @@ CMD ["/opt/wrapper/bin/uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000
 ```
 
 If the tool needs large data files (model weights, databases), don't bake them
-into the image: download them at start into a named volume, as
-[popmusic-start.sh](../dockerfiles/popmusic-start.sh) does. While the download
+into the image: download them at start into a folder mounted from `./models/<software>`, as
+[popmusic-start.sh](../dockerfiles/popmusic-start.sh) does (and add that folder
+to the `mkdir -p` line of [deploy.sh](../deploy.sh)). While the download
 runs the wrapper isn't up yet; the backend sees the service as unavailable and
-keeps the analyses queued.
+keeps the analyses waiting.
 
 Build and try it by hand before touching the backend:
 
@@ -258,8 +258,6 @@ Add the service to **both** [docker-compose.yml](../docker-compose.yml) and
     user: "${UID}:${GID}"
     volumes:
       - ./data:/data:z          # dev file: no ":z", security_opt: [label:disable] instead
-    environment:
-      MAX_PARALLEL: "2"
     restart: unless-stopped     # prod only
 ```
 
@@ -285,6 +283,7 @@ Rules:
 ```toml
 [hotmusic]
 url = "http://hotmusic:8000"
+max_parallel = 1   # analyses run at the same time, the others wait in the backend's queue
 ```
 
 in `backend/config.toml` on each machine, and in `config.toml.example`. A
@@ -315,7 +314,7 @@ later.
 
 `create_analysis()` (in [app/submit/base.py](../backend/app/submit/base.py))
 does the common part: refuse unknown/unconfigured tools, generate the UUID,
-write `input/input.pdb` (and the MSA), insert the rows with status `init`.
+write `input/input.pdb` (and the MSA), insert the rows with status `waiting`.
 
 > New DB columns: `init_db()` only creates missing tables, it doesn't alter
 > existing ones. Adding a column to an existing table needs a manual migration
@@ -380,8 +379,8 @@ Rules for `build_args`:
   per-machine options.
 
 Nothing else is needed: at startup, `start_watchers()` starts a
-`SoftwareWatcher("hotmusic")` thread that picks up `init` analyses, calls your
-job class and polls the wrapper.
+`SoftwareWatcher("hotmusic")` thread that starts the `waiting` analyses (oldest
+first, at most `max_parallel` at once), calls your job class and polls the wrapper.
 
 ### 6.4 The results endpoint
 
@@ -442,7 +441,7 @@ docker compose -f docker-compose.dev.yml up --build
 2. Backend logs: `Analysis <id> submitted to http://hotmusic:8000`.
 3. `cat data/jobs/<id>/status.json` and `data/jobs/<id>/job.log`: the exact
    command (`argv`) and its output.
-4. The page switches from *Pending* to *Running*, shows the log, then the results.
+4. The page switches from *In the queue* to *Running*, shows the log, then the results.
 
 When it fails, `status.json` shows the `argv` and `returncode`: re-run that
 command by hand with
