@@ -1,0 +1,12 @@
+# GPU override, for machines with an NVIDIA GPU and the NVIDIA Container Toolkit.
+# Enable it once in the root .env, so the usual commands stay the same:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
+services:
+  popmusic:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

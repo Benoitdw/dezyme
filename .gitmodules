@@ -4,3 +4,8 @@
 [submodule "backend"]
 	path = backend
 	url = git@github.com:Benoitdw/dezyme_backend.git
+[submodule "softwares/popmusic"]
+	path = softwares/popmusic
+	url = git@github.com:3BioCompBio/PoPMuSiCv3.git
+	branch = main
+	ignore = all

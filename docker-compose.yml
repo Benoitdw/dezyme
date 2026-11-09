@@ -1,10 +1,13 @@
+# Bind mounts end in :z so they work with SELinux enforcing (Fedora).
 services:
   frontend:
     build: ./frontend
     ports:
-      - "8080:80"
+      - "${FRONTEND_PORT:-8080}:80"   # set FRONTEND_PORT in .env if 8080 is taken
     depends_on:
       - backend
+    # nginx exits if "backend" does not resolve when it starts (backend restarting).
+    restart: unless-stopped
 
   backend:
     build: ./backend
@@ -12,8 +15,37 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/config.toml:/app/config.toml:ro
-      - ./backend/.env:/app/.env:ro
-      - ./backend/data:/app/data
+      - ./backend/config.toml:/app/config.toml:ro,z
+      - ./backend/.env:/app/.env:ro,z
+      - ./backend/data:/app/data:z   # DB, backend only
+      - ./data:/data:z               # job folders shared with the softwares
     env_file:
       - ./backend/.env
+    depends_on:
+      - popmusic
+    restart: unless-stopped
+
+  # One service per software: the tool + wrapper/api.py, reachable only on the
+  # compose network (http://popmusic:8000), never published on the host.
+  popmusic:
+    build:
+      context: ./dockerfiles
+      dockerfile: popmusic.Dockerfile
+      additional_contexts:
+        app: ./softwares/popmusic
+        wrapper: ./wrapper
+      args:
+        UID: "${UID}"
+        GID: "${GID}"
+    user: "${UID}:${GID}"
+    volumes:
+      - ./data:/data:z
+      - popmusic-models:/models
+    environment:
+      MAX_PARALLEL: "1"
+    restart: unless-stopped
+    # Runs on the CPU here. On a machine with an NVIDIA GPU, add
+    # docker-compose.gpu.yml (see README): same image, PoPMuSiC uses the GPU.
+
+volumes:
+  popmusic-models:

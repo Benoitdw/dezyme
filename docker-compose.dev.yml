@@ -19,16 +19,42 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile.dev
+    user: "${UID}:${GID}"
     security_opt:
       - label:disable
     ports:
       - "8000:8000"
     volumes:
       - ./backend/app:/app/app
-      - ./backend/local_task:/app/local_task
       - ./backend/config.toml:/app/config.toml:ro
       - ./backend/.env:/app/.env:ro
       - ./backend/data:/app/data
-      - ~/.ssh:/run/ssh:ro
+      - ./data:/data
     env_file:
       - ./backend/.env
+    depends_on:
+      - popmusic
+
+  # Same image as in production, without the GPU reservation: PoPMuSiC runs
+  # on the CPU here (slower, same results).
+  popmusic:
+    build:
+      context: ./dockerfiles
+      dockerfile: popmusic.Dockerfile
+      additional_contexts:
+        app: ./softwares/popmusic
+        wrapper: ./wrapper
+      args:
+        UID: "${UID}"
+        GID: "${GID}"
+    user: "${UID}:${GID}"
+    security_opt:
+      - label:disable
+    volumes:
+      - ./data:/data
+      - popmusic-models:/models
+    environment:
+      MAX_PARALLEL: "1"
+
+volumes:
+  popmusic-models:

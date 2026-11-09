@@ -1,1 +1,8 @@
 .env
+
+user.tsv
+analytics_users.png
+
+# Shared job folders (docker volume ./data:/data)
+data/*
+!data/.gitkeep

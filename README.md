@@ -3,13 +3,15 @@
 Web interface for protein mutation analysis tools: **PopMuSiC**, **HoTMuSiC**, **SNPMuSiC** and others.
 
 - **Frontend**: SvelteKit + Vite + Tailwind CSS
-- **Backend**: FastAPI (Python 3.12), SQLite, SSH jobs on remote machines
+- **Backend**: FastAPI (Python 3.12), SQLite, starts the jobs
+- **Softwares**: one container per tool (only PoPMuSiC for now), driven over HTTP by the backend
 
 ---
 
 ## Requirements
 
-- [Docker](https://docs.docker.com/get-docker/) + Docker Compose v2
+- [Docker](https://docs.docker.com/get-docker/) + Docker Compose v2.17 or later
+- Optional, for the GPU: the NVIDIA driver and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html). Without a GPU, PoPMuSiC runs on the CPU (slower, same results).
 
 ---
 
@@ -17,33 +19,43 @@ Web interface for protein mutation analysis tools: **PopMuSiC**, **HoTMuSiC**, *
 
 ### 1. `backend/config.toml`
 
-Copy the example and fill in the SSH credentials for each tool:
-
 ```bash
 cp backend/config.toml.example backend/config.toml
 ```
 
+One section per integrated software, with the URL of its service in `docker-compose.yml`:
+
 ```toml
 [popmusic]
-host      = "spitzberg.example.com"
-user      = "myuser"
-root_path = "/data/analyses/popmusic"
-
-# repeat for hotmusic, snpmusic, etc.
+url = "http://popmusic:8000"
 ```
 
-To run a tool locally (no SSH), set `host = "localhost"` — `user` is then ignored.
+A software without a section is refused at submit time ("not available yet").
 
 ### 2. `backend/.env`
 
 ```bash
-cp backend/.env.example backend/.env   # if the file doesn't exist, create an empty .env
+cp backend/.env.example backend/.env
 ```
 
-| Variable       | Default                    | Description                                          |
-|----------------|----------------------------|------------------------------------------------------|
-| `ROOT_PATH`    | `""`                       | FastAPI root path — set to `/dezyme` behind Apache   |
-| `SSH_KEY_PATH` | `/root/.ssh/id_dezyme`     | Path to the SSH private key inside the container     |
+| Variable    | Default | Description                                        |
+|-------------|---------|----------------------------------------------------|
+| `ROOT_PATH` | `""`    | FastAPI root path — set to `/dezyme` behind Apache |
+
+### 3. `.env` (repo root)
+
+The containers run with the uid/gid of the user that owns the repo, so the files in `data/` stay readable and deletable without sudo:
+
+```bash
+printf 'UID=%s\nGID=%s\n' "$(id -u)" "$(id -g)" > .env
+```
+
+On a machine with an NVIDIA GPU, also enable the GPU override (once). All the
+`docker compose` commands below then use the GPU without any extra flag:
+
+```bash
+echo 'COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml' >> .env
+```
 
 ---
 
@@ -80,85 +92,101 @@ sudo su - dezyme
 
 All following steps run as the `dezyme` user unless stated otherwise.
 
-### 3. Generate an SSH key pair
+### 3. Clone the repository
 
-This key will be used by the backend to connect to remote machines running the analysis tools.
+This is an umbrella repo — `frontend/`, `backend/` and `softwares/popmusic/` are git submodules.
 
-```bash
-ssh-keygen -t ed25519 -C "dezyme" -f ~/.ssh/id_dezyme
-# Leave passphrase empty (required for unattended use)
-```
+All four repos are private and fetched over SSH: give the server read-only
+access with deploy keys first, see [GitHub deploy keys](#github-deploy-keys).
 
-Copy the public key to each remote machine:
+Then clone with:
 
 ```bash
-ssh-copy-id -i ~/.ssh/id_dezyme.pub user@remote-machine-1
-ssh-copy-id -i ~/.ssh/id_dezyme.pub user@remote-machine-2
-# repeat for each machine
-```
-
-Verify each connection works without a password prompt:
-
-```bash
-ssh -i ~/.ssh/id_dezyme user@remote-machine-1 "echo OK"
-```
-
-### 4. Clone the repository
-
-This is an umbrella repo — `frontend/` and `backend/` are git submodules. Clone with:
-
-```bash
-git clone --recurse-submodules <repo-url> ~/dezyme
+git clone --recurse-submodules git@github.com:Benoitdw/dezyme.git ~/dezyme
 cd ~/dezyme
 ```
 
-If you already cloned without `--recurse-submodules`:
+If you already cloned without `--recurse-submodules`, `./deploy.sh` (step 6) fetches them.
 
-```bash
-git submodule update --init --recursive
-```
+#### GitHub deploy keys
 
-### 5. Configure `backend/config.toml`
+A deploy key is an SSH key with read-only access to **one** repo (GitHub refuses
+the same key on two repos), so the server needs one key per repo:
 
-```bash
-cp backend/config.toml.example backend/config.toml
-```
+| Repo                       | Key                       | Added by                 |
+|----------------------------|---------------------------|--------------------------|
+| `Benoitdw/dezyme`          | `~/.ssh/deploy_dezyme`          | repo owner         |
+| `Benoitdw/dezyme_backend`  | `~/.ssh/deploy_dezyme_backend`  | repo owner         |
+| `Benoitdw/dezyme_frontend` | `~/.ssh/deploy_dezyme_frontend` | repo owner         |
+| `3BioCompBio/PoPMuSiCv3`   | `~/.ssh/deploy_popmusic`        | a 3BioCompBio admin |
 
-Edit `backend/config.toml` and fill in one section per tool:
+1. Generate the keys, as the `dezyme` user:
 
-```toml
-[popmusic]
-host      = "remote-machine-1"
-user      = "myuser"
-root_path = "/data/analyses/popmusic"
+   ```bash
+   for r in dezyme dezyme_backend dezyme_frontend popmusic; do
+     ssh-keygen -t ed25519 -N "" -C "prod-$r" -f ~/.ssh/deploy_$r
+   done
+   cat ~/.ssh/deploy_*.pub
+   ```
 
-[hotmusic]
-host      = "remote-machine-2"
-user      = "myuser"
-root_path = "/data/analyses/hotmusic"
+2. On GitHub, in each repo: **Settings → Deploy keys → Add deploy key**, paste
+   the matching `.pub` key and leave "Allow write access" unchecked.
 
-# For a locally-running tool (no SSH):
-[localtask]
-host      = "localhost"
-root_path = "/data/analyses/localtask"
-```
+3. Tell SSH which key goes with which repo. All the URLs point to `github.com`,
+   so each key gets a host alias in `~/.ssh/config`:
 
-### 6. Configure `backend/.env`
+   ```
+   Host gh-dezyme
+     HostName github.com
+     User git
+     IdentityFile ~/.ssh/deploy_dezyme
+     IdentitiesOnly yes
 
-```bash
-cp backend/.env.example backend/.env
-```
+   Host gh-dezyme_backend
+     HostName github.com
+     User git
+     IdentityFile ~/.ssh/deploy_dezyme_backend
+     IdentitiesOnly yes
 
-Open `backend/.env` and set:
+   Host gh-dezyme_frontend
+     HostName github.com
+     User git
+     IdentityFile ~/.ssh/deploy_dezyme_frontend
+     IdentitiesOnly yes
 
-```env
-ROOT_PATH=/dezyme
-SSH_KEY_PATH=/root/.ssh/id_dezyme
-```
+   Host gh-popmusic
+     HostName github.com
+     User git
+     IdentityFile ~/.ssh/deploy_popmusic
+     IdentitiesOnly yes
+   ```
 
-`ROOT_PATH` tells FastAPI that the app is served behind a `/dezyme` prefix. `SSH_KEY_PATH` is the path to the SSH private key **inside the container** — it corresponds to `~/.ssh/id_dezyme` on the host, which is mounted automatically by Docker Compose.
+   and git rewrites the URLs to those aliases on this machine only
+   (`.gitmodules` stays unchanged):
 
-### 7. Configure Apache
+   ```bash
+   git config --global url."git@gh-dezyme:Benoitdw/dezyme.git".insteadOf git@github.com:Benoitdw/dezyme.git
+   git config --global url."git@gh-dezyme_backend:Benoitdw/dezyme_backend.git".insteadOf git@github.com:Benoitdw/dezyme_backend.git
+   git config --global url."git@gh-dezyme_frontend:Benoitdw/dezyme_frontend.git".insteadOf git@github.com:Benoitdw/dezyme_frontend.git
+   git config --global url."git@gh-popmusic:3BioCompBio/PoPMuSiCv3.git".insteadOf git@github.com:3BioCompBio/PoPMuSiCv3.git
+   ```
+
+4. Check that the four repos are readable:
+
+   ```bash
+   for r in Benoitdw/dezyme Benoitdw/dezyme_backend Benoitdw/dezyme_frontend 3BioCompBio/PoPMuSiCv3; do
+     git ls-remote git@github.com:$r.git HEAD >/dev/null && echo "OK $r" || echo "KO $r"
+   done
+   ```
+
+If the server is compromised, these keys only give read access to these repos;
+revoke one in the repo's Deploy keys settings without touching any account.
+
+### 4. Configure
+
+Create `backend/config.toml`, `backend/.env` (with `ROOT_PATH=/dezyme`) and the root `.env`, see [Configuration](#configuration-required-before-first-start).
+
+### 5. Configure Apache
 
 Create a new virtual host config or add to an existing one:
 
@@ -179,14 +207,19 @@ sudo a2ensite dezyme.conf   # skip if added to an existing VirtualHost
 sudo systemctl reload apache2
 ```
 
-### 8. Start the stack
+### 6. Start the stack
 
 ```bash
 cd ~/dezyme
-docker compose up --build -d
+./deploy.sh
 ```
 
-Check that both containers are running:
+The first build takes a while (PyTorch with CUDA, several GB). The first start of
+`popmusic` then downloads the SaProt weights (~3 GB) into the `popmusic-models`
+volume; analyses submitted meanwhile stay queued and start once it is up. Both
+happen once per machine.
+
+Check that the containers are running:
 
 ```bash
 docker compose ps
@@ -200,7 +233,7 @@ docker compose logs -f
 
 The application should now be available at `http://babylone.3bio.ulb.ac.be/dezyme`.
 
-### 9. Auto-start on boot (systemd)
+### 7. Auto-start on boot (systemd)
 
 ```bash
 sudo nano /etc/systemd/system/dezyme.service
@@ -229,7 +262,7 @@ sudo systemctl enable dezyme
 sudo systemctl start dezyme
 ```
 
-### 10. Stopping and updating
+### 8. Stopping and updating
 
 ```bash
 cd ~/dezyme
@@ -237,10 +270,18 @@ cd ~/dezyme
 # Stop
 docker compose down
 
-# Pull latest code (umbrella + submodules) and restart
-git pull --recurse-submodules
-docker compose up --build -d
+# Update: pull the latest code and rebuild what changed
+./deploy.sh
 ```
+
+`deploy.sh` checks out `backend/` and `frontend/` at the commits recorded in
+this repo, and `softwares/popmusic/` at the **latest commit of its `main`
+branch** (`branch = main` in `.gitmodules`, fetched with `--remote`): there is
+nothing to commit here when PoPMuSiC changes, the next deploy picks it up.
+Docker only rebuilds the PoPMuSiC layers when its code actually changed.
+
+Rebuilding `popmusic` kills a running analysis (it ends as `job_dead`):
+deploy when no analysis is running.
 
 ---
 
@@ -267,7 +308,7 @@ docker compose down
 
 ## Development mode
 
-Dev mode mounts the source code into the containers and enables automatic reloading — no rebuild needed on every change.
+Dev mode mounts the source code into the containers and enables automatic reloading — no rebuild needed on every change. PoPMuSiC uses the same image as in production, without the GPU: it runs on the CPU, slower but the results are the same.
 
 ```bash
 docker compose -f docker-compose.dev.yml up --build
@@ -306,51 +347,55 @@ flowchart TD
         subgraph DC["Docker Compose"]
             Frontend["Frontend\nSvelteKit · Nginx\n:8080"]
             Backend["Backend\nFastAPI\n:8000"]
-            DB[("SQLite")]
-            Routing["Routing\n(config.toml)"]
+            DB[("SQLite\nbackend/data")]
+            PopMuSiC["popmusic\nPoPMuSiC + wrapper\n(GPU, internal only)"]
+            Data[("data/jobs/&lt;id&gt;\ninput/ output/")]
         end
-    end
-
-    subgraph M1["Remote machine 1"]
-        PopMuSiC["PopMuSiC"]
-    end
-    subgraph M2["Remote machine 2"]
-        HoTMuSiC["HoTMuSiC"]
-    end
-    subgraph M3["Remote machine 3"]
-        SNPMuSiC["SNPMuSiC"]
-    end
-    subgraph M4["localhost"]
-        LocalTask["LocalTask"]
     end
 
     Browser --> Apache
     Apache -->|":8080"| Frontend
     Frontend <-->|"/api/*  →  :8000"| Backend
     Backend <--> DB
-    Backend --> Routing
-    Routing -->|SSH| PopMuSiC
-    Routing -->|SSH| HoTMuSiC
-    Routing -->|SSH| SNPMuSiC
-    Routing --> LocalTask
+    Backend -->|"POST /run · GET /status"| PopMuSiC
+    Backend <--> Data
+    PopMuSiC <--> Data
 ```
+
+Each software runs in its own container next to the backend, behind the same
+generic wrapper (`wrapper/api.py`). For each analysis the backend:
+
+1. writes the inputs to `data/jobs/<id>/input/` (shared volume, same path `/data` in every container);
+2. calls `POST http://<software>:8000/run/<id>` with the command-line arguments;
+3. polls `GET /status/<id>` every 15 s until `done` or `failed`;
+4. serves the results straight from `data/jobs/<id>/output/`.
+
+The software containers publish no port: only the backend can reach them.
+
+### Adding a software
+
+1. Add its repo as a submodule under `softwares/`.
+2. Write `dockerfiles/<software>.Dockerfile`: install the tool from the `app` build context, copy the wrapper with `COPY --from=wrapper api.py /wrapper/api.py`, set `RUN_CMD` and run `uvicorn api:app --port 8000` (see `popmusic.Dockerfile`).
+3. Add the service to both compose files, with the `./data:/data` volume.
+4. In the backend: a job class (`app/jobs/`) that returns the arguments, registered in `JOB_REGISTRY`, and a `[software]` section with its `url` in `config.toml`.
 
 ---
 
 ## Project structure
 
-This is an umbrella repo. `frontend/` and `backend/` are independent git submodules:
+This is an umbrella repo. `frontend/`, `backend/` and the softwares are independent git submodules:
 
-| Submodule    | Repository                                    |
-|--------------|-----------------------------------------------|
-| `frontend/`  | github.com/Benoitdw/dezyme_frontend           |
-| `backend/`   | github.com/Benoitdw/dezyme_backend            |
+| Submodule             | Repository                                    |
+|-----------------------|-----------------------------------------------|
+| `frontend/`           | github.com/Benoitdw/dezyme_frontend           |
+| `backend/`            | github.com/Benoitdw/dezyme_backend            |
+| `softwares/popmusic/` | github.com/3BioCompBio/PoPMuSiCv3             |
 
 ```
 dezyme/                      ← umbrella repo (this repo)
 ├── backend/                 ← submodule (dezyme_backend)
 │   ├── app/                 # FastAPI source
-│   ├── config.toml          # SSH config per tool (gitignored)
+│   ├── config.toml          # service URL per tool (gitignored)
 │   ├── config.toml.example
 │   ├── .env                 # environment variables (gitignored)
 │   ├── Dockerfile           # production image
@@ -360,6 +405,13 @@ dezyme/                      ← umbrella repo (this repo)
 │   ├── static/
 │   ├── nginx.conf           # production Nginx config
 │   └── Dockerfile           # static build + Nginx
+├── softwares/
+│   └── popmusic/            ← submodule (PoPMuSiCv3), not modified
+├── dockerfiles/
+│   └── popmusic.Dockerfile  # PoPMuSiC + wrapper image
+├── wrapper/
+│   └── api.py               # generic FastAPI wrapper, shared by all softwares
+├── data/jobs/               # job folders (gitignored, shared volume)
 ├── docker-compose.yml       # production stack
 └── docker-compose.dev.yml   # dev stack with hot-reload
 ```
