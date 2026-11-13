@@ -28,19 +28,9 @@ services:
   # One service per software: the tool + wrapper/api.py, reachable only on the
   # compose network (http://popmusic:8000), never published on the host.
   popmusic:
-    build:
-      context: ./dockerfiles
-      dockerfile: popmusic.Dockerfile
-      additional_contexts:
-        app: ./softwares/popmusic
-        wrapper: ./wrapper
-      args:
-        UID: "${UID}"
-        GID: "${GID}"
-    user: "${UID}:${GID}"
-    volumes:
-      - ./data:/data:z
-      - ./models/popmusic:/models:z  # SaProt weights (~5 GB), downloaded on first start
+    extends:
+      file: compose.common.yml
+      service: popmusic
     restart: unless-stopped
     # Runs on the CPU here. On a machine with an NVIDIA GPU, add
     # docker-compose.gpu.yml (see README): same image, PoPMuSiC uses the GPU.

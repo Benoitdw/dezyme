@@ -46,7 +46,7 @@ What you have to provide for a new software:
 |---|------|-------|------|
 | 1 | The tool's source | `softwares/hotmusic/` (git submodule) | umbrella |
 | 2 | A Docker image: tool + wrapper | `dockerfiles/hotmusic.Dockerfile` | umbrella |
-| 3 | A service | `docker-compose.yml`, `docker-compose.dev.yml` (+ `docker-compose.gpu.yml` if needed) | umbrella |
+| 3 | A service | `compose.common.yml`, `docker-compose.yml`, `docker-compose.dev.yml` (+ `docker-compose.gpu.yml` if needed) | umbrella |
 | 4 | Its service URL | `backend/config.toml` (+ `config.toml.example`) | backend |
 | 5 | DB input model + submit handler | `app/models.py`, `app/submit/hotmusic.py` | backend |
 | 6 | A job class that builds the command line | `app/jobs/hotmusic.py`, registered in `app/jobs/__init__.py` | backend |
@@ -241,8 +241,7 @@ docker compose run --rm hotmusic sh -c 'cd /data/jobs/test && hotmusic ...'
 
 ## 5. The compose services
 
-Add the service to **both** [docker-compose.yml](../docker-compose.yml) and
-[docker-compose.dev.yml](../docker-compose.dev.yml):
+Put the service in [compose.common.yml](../compose.common.yml):
 
 ```yaml
   hotmusic:
@@ -257,8 +256,18 @@ Add the service to **both** [docker-compose.yml](../docker-compose.yml) and
         GID: "${GID}"
     user: "${UID}:${GID}"
     volumes:
-      - ./data:/data:z          # dev file: no ":z", security_opt: [label:disable] instead
-    restart: unless-stopped     # prod only
+      - ./data:/data:z
+```
+
+Then extend it in **both** [docker-compose.yml](../docker-compose.yml) and
+[docker-compose.dev.yml](../docker-compose.dev.yml):
+
+```yaml
+  hotmusic:
+    extends:
+      file: compose.common.yml
+      service: hotmusic
+    restart: unless-stopped     # prod file only
 ```
 
 and add `hotmusic` to the backend's `depends_on`.
@@ -270,7 +279,7 @@ Rules:
 - **`./data:/data`** is mandatory: the job folder must be at the same path in
   the backend and in the tool's container, so the paths the backend writes in
   the arguments are valid as is.
-- `:z` on bind mounts in the prod file (SELinux on Fedora).
+- `:z` on bind mounts (SELinux on Fedora), set once in `compose.common.yml`.
 - GPU: add a `hotmusic:` block to [docker-compose.gpu.yml](../docker-compose.gpu.yml)
   only if the tool uses one.
 
@@ -451,7 +460,7 @@ command by hand with
 
 - [ ] `softwares/hotmusic` submodule (+ `deploy.sh`, deploy key)
 - [ ] `dockerfiles/hotmusic.Dockerfile` (+ launcher / start script if needed)
-- [ ] Service in `docker-compose.yml` and `docker-compose.dev.yml`, in backend `depends_on`
+- [ ] Service in `compose.common.yml`, extended in `docker-compose.yml` and `docker-compose.dev.yml`, in backend `depends_on`
 - [ ] `[hotmusic] url` in `config.toml` (every machine) and `config.toml.example`
 - [ ] Submit handler validates the inputs
 - [ ] `HotMusicJob` in `JOB_REGISTRY`

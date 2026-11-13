@@ -38,18 +38,6 @@ services:
   # Same image as in production, without the GPU reservation: PoPMuSiC runs
   # on the CPU here (slower, same results).
   popmusic:
-    build:
-      context: ./dockerfiles
-      dockerfile: popmusic.Dockerfile
-      additional_contexts:
-        app: ./softwares/popmusic
-        wrapper: ./wrapper
-      args:
-        UID: "${UID}"
-        GID: "${GID}"
-    user: "${UID}:${GID}"
-    security_opt:
-      - label:disable
-    volumes:
-      - ./data:/data
-      - ./models/popmusic:/models
+    extends:
+      file: compose.common.yml
+      service: popmusic

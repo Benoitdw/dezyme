@@ -1,0 +1,16 @@
+# Shared service definitions, extended by docker-compose.yml and docker-compose.dev.yml
+services:
+  popmusic:
+    build:
+      context: ./dockerfiles
+      dockerfile: popmusic.Dockerfile
+      additional_contexts:
+        app: ./softwares/popmusic
+        wrapper: ./wrapper
+      args:
+        UID: "${UID}"
+        GID: "${GID}"
+    user: "${UID}:${GID}"
+    volumes:
+      - ./data:/data:z
+      - ./models/popmusic:/models:z  # SaProt weights (~5 GB), downloaded on first start

@@ -381,7 +381,7 @@ The software containers publish no port: only the backend can reach them.
 
 1. Add its repo as a submodule under `softwares/`.
 2. Write `dockerfiles/<software>.Dockerfile`: install the tool from the `app` build context, copy the wrapper with `COPY --from=wrapper api.py /wrapper/api.py`, set `RUN_CMD` and run `uvicorn api:app --port 8000` (see `popmusic.Dockerfile`).
-3. Add the service to both compose files, with the `./data:/data` volume.
+3. Add the service to `compose.common.yml` (build, user, and the `./data:/data` volume), and extend it in both compose files.
 4. In the backend: a job class (`app/jobs/`) that returns the arguments, registered in `JOB_REGISTRY`, and a `[software]` section with its `url` in `config.toml`.
 
 ---
@@ -418,6 +418,7 @@ dezyme/                      ← umbrella repo (this repo)
 │   └── api.py               # generic FastAPI wrapper, shared by all softwares
 ├── data/jobs/               # job folders (gitignored, shared volume)
 ├── models/popmusic/         # SaProt weights (gitignored, downloaded on first start)
+├── compose.common.yml       # shared service definitions (extended by both files below)
 ├── docker-compose.yml       # production stack
 └── docker-compose.dev.yml   # dev stack with hot-reload
 ```
